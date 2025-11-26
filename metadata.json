@@ -1,0 +1,8 @@
+{
+  "name": "Feeling Buddy",
+  "description": "Your emotional companion app. Track feelings, analyze moods, and chat with a supportive AI buddy who talks like a real friend.",
+  "requestFramePermissions": [
+    "microphone",
+    "geolocation"
+  ]
+}
