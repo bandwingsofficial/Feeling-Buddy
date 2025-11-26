@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Send, Mic, Keyboard, Volume2, Loader2 } from 'lucide-react';
+import { Send, Mic, Keyboard, Volume2, Loader2, StopCircle } from 'lucide-react';
 import { GoogleGenAI, Chat, GenerateContentResponse, LiveServerMessage, Modality } from "@google/genai";
 import { User, ChatMessage, BuddyMode, FeelingLog } from '../types';
 import { SYSTEM_INSTRUCTION } from '../constants';
@@ -47,10 +47,16 @@ const Buddy: React.FC<BuddyProps> = ({ user, recentFeelings }) => {
   useEffect(() => {
     genAiRef.current = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
     
-    // Initial greeting
-    const greeting = recentFeelings.length > 0 && recentFeelings[recentFeelings.length-1].intensity < 3
-        ? `Hey ${user.name}, I noticed things have been a bit heavy lately. I'm here for you machi.`
-        : `Hey ${user.name}! It's your buddy here. How's it going today?`;
+    // Initial greeting based on mood
+    let greeting = `Hey ${user.name}! Buddy here. What's up?`;
+    if (recentFeelings.length > 0) {
+        const last = recentFeelings[recentFeelings.length - 1];
+        if (last.type === 'Sad' || last.type === 'Lonely' || last.type === 'Anxious') {
+             greeting = `Hey ${user.name}, I saw you're feeling a bit ${last.type.toLowerCase()} today. I'm here if you want to vent, machi.`;
+        } else if (last.type === 'Happy' || last.type === 'Excited') {
+             greeting = `Hey ${user.name}! Looks like you're in a great mood! Tell me what happened!`;
+        }
+    }
 
     setMessages([{
       id: 'init',
@@ -74,7 +80,7 @@ const Buddy: React.FC<BuddyProps> = ({ user, recentFeelings }) => {
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages, isLoading]);
 
   const handleSendMessage = async () => {
     if (!inputText.trim() || !chatSessionRef.current) return;
@@ -112,6 +118,12 @@ const Buddy: React.FC<BuddyProps> = ({ user, recentFeelings }) => {
       }
     } catch (error) {
       console.error("Chat Error", error);
+      setMessages(prev => [...prev, {
+          id: Date.now().toString(),
+          role: 'model',
+          text: "Ouch, my brain froze for a second. Can you say that again?",
+          timestamp: Date.now()
+      }]);
     } finally {
       setIsLoading(false);
     }
@@ -233,22 +245,26 @@ const Buddy: React.FC<BuddyProps> = ({ user, recentFeelings }) => {
   return (
     <div className="flex flex-col h-full bg-slate-50 relative pb-20">
       {/* Header */}
-      <div className="bg-white/80 backdrop-blur-md p-4 shadow-sm flex items-center justify-between z-10 border-b border-gray-100">
+      <div className="bg-white/90 backdrop-blur-md px-6 py-4 shadow-sm flex items-center justify-between z-10 border-b border-gray-100">
         <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-indigo-600 flex items-center justify-center text-xl text-white shadow-lg shadow-indigo-200">
+            <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-600 flex items-center justify-center text-xl text-white shadow-lg shadow-indigo-200">
                 🤖
             </div>
             <div>
                 <h2 className="font-bold text-gray-800">Buddy</h2>
                 <div className="flex items-center gap-1.5">
-                    <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500 animate-pulse' : 'bg-gray-300'}`}></span>
-                    <p className="text-xs text-gray-500 font-medium">{isConnected ? 'Listening' : 'Online'}</p>
+                    <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500 animate-pulse' : 'bg-teal-500'}`}></span>
+                    <p className="text-[10px] uppercase font-bold text-gray-400 tracking-wider">{isConnected ? 'Voice Active' : 'Online'}</p>
                 </div>
             </div>
         </div>
         <button 
             onClick={toggleMode}
-            className={`p-3 rounded-full transition-all shadow-sm ${mode === BuddyMode.VOICE ? 'bg-red-50 text-red-500 hover:bg-red-100' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'}`}
+            className={`p-3 rounded-full transition-all shadow-sm active:scale-95 ${
+                mode === BuddyMode.VOICE 
+                ? 'bg-red-50 text-red-500 border border-red-100' 
+                : 'bg-indigo-50 text-indigo-600 border border-indigo-100'
+            }`}
         >
             {mode === BuddyMode.TEXT ? <Mic size={20} /> : <Keyboard size={20} />}
         </button>
@@ -260,18 +276,21 @@ const Buddy: React.FC<BuddyProps> = ({ user, recentFeelings }) => {
             <div className="flex-1 overflow-y-auto p-4 space-y-6">
                 {messages.map((msg) => (
                     <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                        <div className={`max-w-[85%] p-4 rounded-2xl text-sm leading-relaxed shadow-sm ${
+                        <div className={`max-w-[85%] p-4 text-sm leading-relaxed shadow-sm ${
                             msg.role === 'user' 
-                            ? 'bg-gray-900 text-white rounded-tr-none' 
-                            : 'bg-white text-gray-700 border border-gray-100 rounded-tl-none'
+                            ? 'bg-gray-800 text-white rounded-2xl rounded-tr-sm' 
+                            : 'bg-white text-gray-700 border border-gray-100 rounded-2xl rounded-tl-sm'
                         }`}>
                             {msg.text}
+                            <div className={`text-[10px] mt-2 opacity-50 font-medium ${msg.role === 'user' ? 'text-right' : 'text-left'}`}>
+                                {new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                            </div>
                         </div>
                     </div>
                 ))}
                 {isLoading && (
                      <div className="flex justify-start">
-                        <div className="bg-white p-4 rounded-2xl rounded-tl-none shadow-sm flex items-center gap-2 border border-gray-100">
+                        <div className="bg-white p-4 rounded-2xl rounded-tl-sm shadow-sm flex items-center gap-2 border border-gray-100">
                             <span className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce"></span>
                             <span className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce delay-75"></span>
                             <span className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce delay-150"></span>
@@ -293,7 +312,7 @@ const Buddy: React.FC<BuddyProps> = ({ user, recentFeelings }) => {
                     <button 
                         onClick={handleSendMessage}
                         disabled={!inputText.trim() || isLoading}
-                        className="bg-gray-900 text-white p-3 rounded-full disabled:opacity-50 hover:bg-gray-800 transition-colors shadow-lg"
+                        className="bg-gray-900 text-white p-3 rounded-full disabled:opacity-50 hover:bg-gray-800 transition-colors shadow-md active:scale-95"
                     >
                         <Send size={18} />
                     </button>
@@ -305,30 +324,53 @@ const Buddy: React.FC<BuddyProps> = ({ user, recentFeelings }) => {
       {/* VOICE MODE */}
       {mode === BuddyMode.VOICE && (
           <div className="flex-1 flex flex-col items-center justify-center p-6 text-center relative overflow-hidden">
-              {/* Background Ambient Animation */}
-              <div className="absolute inset-0 bg-gradient-to-b from-indigo-50/50 to-white pointer-events-none"></div>
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-indigo-100/50 via-slate-50 to-slate-50 pointer-events-none"></div>
               
-              <div className="relative z-10 mb-12">
-                 <div className={`absolute inset-0 bg-indigo-500 rounded-full opacity-20 blur-xl transition-all duration-1000 ${isConnected ? 'scale-150 animate-pulse' : 'scale-100'}`}></div>
+              <div className="relative z-10 mb-16">
+                 {/* Visualizer Circles */}
+                 <div className={`absolute inset-0 bg-indigo-500 rounded-full opacity-10 blur-2xl transition-all duration-1000 ${isConnected ? 'scale-150 animate-pulse' : 'scale-100'}`}></div>
+                 <div className={`absolute inset-0 bg-indigo-400 rounded-full opacity-20 blur-xl transition-all duration-700 delay-100 ${isConnected ? 'scale-[1.3] animate-pulse' : 'scale-100'}`}></div>
                  
-                 <div className="relative w-40 h-40 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-full flex items-center justify-center shadow-2xl shadow-indigo-500/30 transition-transform duration-300 hover:scale-105">
+                 <div 
+                    onClick={isConnected ? disconnectVoice : connectVoice}
+                    className={`relative w-48 h-48 rounded-full flex items-center justify-center shadow-2xl transition-all duration-500 cursor-pointer ${
+                        isConnected 
+                        ? 'bg-gradient-to-br from-indigo-500 to-purple-600 shadow-indigo-500/40 scale-105' 
+                        : 'bg-white text-gray-400 shadow-gray-200 hover:scale-105'
+                    }`}
+                 >
                     {isLoading ? (
-                        <Loader2 size={48} className="text-white animate-spin" />
+                        <Loader2 size={56} className="text-white animate-spin" />
+                    ) : isConnected ? (
+                         <div className="flex items-center gap-1.5 h-12">
+                            <span className="w-2 bg-white rounded-full animate-[bounce_1s_infinite] h-8"></span>
+                            <span className="w-2 bg-white rounded-full animate-[bounce_1.2s_infinite] h-12"></span>
+                            <span className="w-2 bg-white rounded-full animate-[bounce_0.8s_infinite] h-6"></span>
+                            <span className="w-2 bg-white rounded-full animate-[bounce_1.1s_infinite] h-10"></span>
+                         </div>
                     ) : (
-                        <Volume2 size={48} className={`text-white ${isConnected ? 'animate-bounce' : ''}`} />
+                        <Volume2 size={56} strokeWidth={1.5} />
                     )}
                  </div>
               </div>
 
-              <div className="space-y-3 relative z-10">
+              <div className="space-y-4 relative z-10">
                   <h3 className="text-3xl font-black text-gray-800 tracking-tight">
-                      {isLoading ? 'Connecting...' : isConnected ? 'I\'m Listening' : 'Paused'}
+                      {isLoading ? 'Connecting...' : isConnected ? 'Listening...' : 'Tap to Talk'}
                   </h3>
-                  <p className="text-gray-500 max-w-xs mx-auto font-medium">
+                  <p className="text-gray-500 max-w-xs mx-auto font-medium text-lg leading-relaxed">
                       {isConnected 
-                        ? "Talk naturally, I'm here for you machi." 
-                        : "Tap the mic icon when you're ready."}
+                        ? "I'm listening, machi. Speak your heart out." 
+                        : "Start a voice call with your buddy."}
                   </p>
+                  {isConnected && (
+                      <button 
+                        onClick={disconnectVoice}
+                        className="mt-8 px-6 py-2 bg-red-100 text-red-600 rounded-full font-bold text-sm hover:bg-red-200 transition-colors flex items-center gap-2 mx-auto"
+                      >
+                          <StopCircle size={16} /> End Call
+                      </button>
+                  )}
               </div>
           </div>
       )}
